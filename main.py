@@ -2,27 +2,20 @@
 import matplotlib.pyplot as plt
 import numpy as np
 
+import radsim.payload_bytes
 import radsim.bpsk
 import radsim.iq
 
-real_fig = plt.figure(1)
-n_plots = 2
-fs = 16000
-bit_rate = 500
-bpsk_carrier = 1000
+fs = 10000
+f_bit = 1000
+f_bpsk_carrier = 1000
 f_baseband = 50
 
-bbs = radsim.bpsk.BipolarBitStream.from_bytes(b'\x37', bit_rate).add_plot_to_figure(real_fig, (2, 1, 1))
 
-bpsk = radsim.bpsk.BPSK.from_bipolar_bit_stream(bbs, bpsk_carrier, fs, p_carrier=np.pi).add_plot_to_figure(real_fig, (2, 1, 2))
+rx = radsim.iq.RealToIQ(f_baseband) >> +radsim.bpsk.Demodulator(f_bit, f_bpsk_carrier)
 
-iq_fig = plt.figure(2)
-iq = radsim.iq.IQ.from_real(bpsk.signal(), fs, f_baseband).add_plot_to_figure(iq_fig, ((3, 1, 1), (3, 1, 2), (3, 1, 3)))
-#iq = radsim.iq.IQ.from_real(np.cos(40 * 2 * np.pi * np.arange(0, 1, 1/fs)), fs, f_baseband).add_plot_to_figure(iq_fig, ((3, 1, 1), (3, 1, 2), (3, 1, 3)))
-
-bbs2 = radsim.bpsk.BipolarBitStream.from_iq(iq._signal, fs/2, f_baseband, bpsk_carrier)
-
-plt.show()
-
-
-
+(
+    radsim.payload_bytes.Literal(b'\x37\x37', block_size=2)
+    >> +radsim.bpsk.Modulator(f_bit, f_bpsk_carrier, fs)
+    >> +rx
+).run(plot=True)

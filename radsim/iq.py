@@ -2,43 +2,67 @@ import numpy as np
 import scipy.signal
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from . import plotable
+from dataclasses import dataclass
 
-class IQ(plotable.Plotable):
+from . import bench
+from . import signals
+
+@dataclass
+class _Store:
+    t: np.ndarray = np.array([], dtype=np.float64)
+    iq: np.array = np.array([], dtype=np.complex128)
+
+class RealToIQ(bench.Consumer, bench.Producer, bench.PlotableInstrument):
+    _ax = None
     _signal = None
-    _fs = None
     _f_baseband = None
+    _signal_store = _Store()
+    _fs = None
     _t = None
-    @classmethod
-    def from_real(cls, real_signal, fs, f_baseband):
-        iq = cls()
-        t = np.arange(0, len(real_signal) / fs, 1 / fs)
-        iq._signal = scipy.signal.decimate(scipy.signal.hilbert(real_signal) * np.exp(2 * np.pi * -f_baseband * t * 1j), 2)
-        iq._t = scipy.signal.decimate(t, 2)
-        assert len(iq._signal) == len(real_signal) / 2
-        iq._fs = fs / 2
-        iq._f_baseband = f_baseband
-        return iq
-    def add_plot_to_figure(self, fig, subplots, name=None):
-        name = "IQ" if name is None else name
-        assert len(subplots) == 3
-        ax = fig.add_subplot(*subplots[0])
-        ax.plot(self._t, self._signal.real, label="real")
-        ax.plot(self._t, self._signal.imag, label="imag")
-        ax.legend()
-        ax.set_xlabel("Time")
-        ax.set_ylabel("IQ Signal")
-        ax.set_title(name)
-        ax = fig.add_subplot(*subplots[1], projection='3d')
-        ax.plot(self._t, self._signal.real, self._signal.imag)
-        ax.set_xlabel("Time")
-        ax.set_title(name + " 3D")
-        ax = fig.add_subplot(*subplots[2])
-        fft = np.roll(np.abs(np.fft.fft(self._signal)), int(len(self._signal) / 2))
+    def __init__(self, f_baseband):
+        self._f_baseband = f_baseband
+    def get_consume_type(self):
+        return signals.Real
+    def get_product_type(self):
+        return signals.IQ
+    def consume(self, real):
+        signal = scipy.signal.decimate(scipy.signal.hilbert(real.signal) * np.exp(2 * np.pi * -self._f_baseband * real.t * 1j), 2)
+        self._t = real.t[::2]
+        self._fs = real.fs / 2
+        self._signal_store.t = np.concatenate((self._signal_store.t, self._signal_store.t[-1] + self._t)) if len(self._signal_store.t) > 0 else self._t
+        self._signal_store.iq = np.concatenate((self._signal_store.iq, signal))
+        self._signal = signals.IQ(self._t, signal, self._fs)
+        assert len(self._signal.signal) == len(real.signal) / 2
+    def produce(self):
+        ret = self._signal
+        self._signal = None
+        return ret
+    def n_figs(self):
+        return 1
+    def init_figs(self, figs):
+        self._ax = []
+        self._ax.append(figs[0].add_subplot(3, 1, 1))
+        self._ax[0].set_xlabel("Time")
+        self._ax[0].set_ylabel("IQ Signal")
+        self._ax[0].set_title("IQ")
+        self._ax.append(figs[0].add_subplot(3, 1, 2, projection='3d'))
+        self._ax[1].set_xlabel("Time")
+        self._ax[1].set_ylabel("Real")
+        self._ax[1].set_zlabel("Imag")
+        self._ax[1].set_title("IQ 3D")
+        self._ax.append(figs[0].add_subplot(3, 1, 3))
+        self._ax[2].set_xlabel("Frequency")
+        self._ax[2].set_ylabel("IQ Signal")
+        self._ax[2].set_title("IQ")
+        figs[0].tight_layout()
+    def plot(self):
+        t = self._signal_store.t
+        s = self._signal_store.iq
+        self._ax[0].plot(t, s.real, label="real")
+        self._ax[0].plot(t, s.imag, label="imag")
+        self._ax[0].legend()
+        self._ax[1].plot(t, s.real, s.imag)
+        fft = np.roll(np.abs(np.fft.fft(s)), int(len(s) / 2))
         f_range = self._fs / 2
-        ax.plot(np.linspace(-f_range + self._f_baseband, f_range + self._f_baseband, len(fft)), fft)
-        ax.set_xlabel("Frequency")
-        ax.set_ylabel("IQ Signal")
-        ax.set_title(name)
-        return self
+        self._ax[2].plot(np.linspace(-f_range + self._f_baseband, f_range + self._f_baseband, len(fft)), fft)
 
