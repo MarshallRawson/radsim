@@ -94,7 +94,10 @@ class Bench:
         out_data = []
         while True:
             if len(self._instruments) == 0: break
-            data = self._instruments[0].produce()
+            if isinstance(self._instruments[0], _Producer):
+                data = self._instruments[0].produce()
+            else:
+                break
             if data is None:
                 if isinstance(self._instruments[0], PlotableInstrument) and self._instruments[0]._figs_enabled and self._figs_enabled:
                     self._instruments[0].plot()
